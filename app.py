@@ -30,7 +30,7 @@ with st.sidebar:
     model_choice = st.radio("🤖 Model Type", ["LSTM", "GRU"])
     uploaded_file = st.file_uploader("📂 Upload AQI CSV", type=["csv"])
 
-# ====================== THEME COLORS ======================
+# ====================== THEME SETTINGS ======================
 if theme_mode == "Light Mode":
     bg_color = "#f8fafc"
     text_color = "#111"
@@ -72,11 +72,11 @@ footer {{visibility: hidden;}}
 st.markdown("""
 <div class="main-header">
   <h1>🌏 India AQI Forecast Dashboard</h1>
-  <p>AI-powered Air Quality Prediction, Mapping & Correlation Insights</p>
+  <p>AI-powered Air Quality Prediction, Mapping & Insights</p>
 </div>
 """, unsafe_allow_html=True)
 
-# ====================== DATA UPLOAD ======================
+# ====================== LOAD DATA ======================
 @st.cache_data(show_spinner=False)
 def load_data(uploaded):
     if uploaded is not None:
@@ -92,7 +92,7 @@ def load_data(uploaded):
 
     df.columns = df.columns.str.lower().str.strip()
     if "date" not in df.columns:
-        st.error("❌ The dataset must contain a 'date' column.")
+        st.error("❌ The dataset must have a 'date' column.")
         st.stop()
 
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
@@ -108,7 +108,7 @@ def load_data(uploaded):
     if "city" not in df.columns:
         df["city"] = "Unknown"
 
-    # Add synthetic coordinates if not available
+    # Add synthetic coordinates if missing
     city_coords = {
         "delhi": (28.6139, 77.2090), "mumbai": (19.0760, 72.8777),
         "chennai": (13.0827, 80.2707), "kolkata": (22.5726, 88.3639),
@@ -117,15 +117,22 @@ def load_data(uploaded):
         "lucknow": (26.8467, 80.9462), "ahmedabad": (23.0225, 72.5714),
         "chandigarh": (30.7333, 76.7794), "indore": (22.7196, 75.8577)
     }
+
     df["city_clean"] = df["city"].astype(str).str.lower().str.strip()
     df["latitude"], df["longitude"] = zip(*[
         city_coords.get(c, (np.random.uniform(8, 32), np.random.uniform(68, 97)))
         for c in df["city_clean"]
     ])
 
+    # Ensure valid numeric lat/lon
+    df["latitude"] = pd.to_numeric(df["latitude"], errors="coerce")
+    df["longitude"] = pd.to_numeric(df["longitude"], errors="coerce")
+    df = df[(df["latitude"].between(-90, 90)) & (df["longitude"].between(-180, 180))]
+
     return df
 
 df = load_data(uploaded_file)
+st.sidebar.success("✅ Data Loaded Successfully!")
 
 # ====================== CITY SELECTOR ======================
 city = st.sidebar.selectbox("🏙️ Choose City", sorted(df["city"].unique()))
@@ -146,7 +153,7 @@ def load_keras_model_safe(choice):
 model, model_status = load_keras_model_safe(model_choice)
 st.sidebar.info(model_status)
 
-# ====================== AQI INDICATOR ======================
+# ====================== AQI STATUS ======================
 latest_aqi = float(df_city["aqi"].iloc[-1])
 if latest_aqi <= 50:
     aqi_color, aqi_status = "#00e676", "Good 🟢"
@@ -162,36 +169,18 @@ col1.markdown(f"<div class='metric-card'><h3>City</h3><h2>{city}</h2></div>", un
 col2.markdown(f"<div class='metric-card'><h3>Current AQI</h3><h2 style='color:{aqi_color};'>{latest_aqi:.0f}</h2><p>{aqi_status}</p></div>", unsafe_allow_html=True)
 col3.markdown(f"<div class='metric-card'><h3>Model</h3><h2>{model_choice}</h2></div>", unsafe_allow_html=True)
 
-# ====================== GAUGE METER ======================
-fig_gauge = go.Figure(go.Indicator(
-    mode="gauge+number",
-    value=latest_aqi,
-    title={'text': f"Current AQI — {aqi_status}", 'font': {'size': 20}},
-    gauge={
-        'axis': {'range': [0, 500]},
-        'bar': {'color': aqi_color},
-        'steps': [
-            {'range': [0, 50], 'color': '#00e676'},
-            {'range': [50, 100], 'color': '#ffeb3b'},
-            {'range': [100, 200], 'color': '#ff9800'},
-            {'range': [200, 500], 'color': '#f44336'}
-        ],
-    }
-))
-st.plotly_chart(fig_gauge, use_container_width=True)
-
-# ====================== MAIN TABS ======================
+# ====================== TABS ======================
 tab1, tab2, tab3, tab4 = st.tabs(["📈 Trend", "🔮 Forecast", "🗺️ Map", "📊 Correlation"])
 
-# ----------- Trend Tab -----------
+# ---- Tab 1: Trend ----
 with tab1:
     st.subheader(f"AQI Trend — {city}")
-    fig = px.line(df_city, x="date", y="aqi", markers=True, title=f"AQI Over Time — {city}")
+    fig = px.line(df_city, x="date", y="aqi", markers=True, title=f"AQI Levels — {city}")
     fig.update_traces(line=dict(width=3))
     fig.update_layout(template=plot_template)
     st.plotly_chart(fig, use_container_width=True)
 
-# ----------- Forecast Tab -----------
+# ---- Tab 2: Forecast ----
 with tab2:
     st.subheader(f"7-Day AQI Forecast — {city}")
     np.random.seed(42)
@@ -200,20 +189,25 @@ with tab2:
     future_dates = pd.date_range(df_city["date"].iloc[-1] + pd.Timedelta(days=1), periods=7)
     forecast_df = pd.DataFrame({"Date": future_dates, "Predicted AQI": forecast})
 
-    fig_forecast = px.area(forecast_df, x="Date", y="Predicted AQI", title=f"7-Day Forecast for {city}",
+    fig_forecast = px.area(forecast_df, x="Date", y="Predicted AQI", title=f"7-Day Forecast — {city}",
                            color_discrete_sequence=["#26a69a"])
     fig_forecast.update_traces(line=dict(width=3))
     fig_forecast.update_layout(template=plot_template)
     st.plotly_chart(fig_forecast, use_container_width=True)
     st.dataframe(forecast_df.style.format({"Predicted AQI": "{:.2f}"}))
 
-# ----------- Map Tab -----------
+# ---- Tab 3: India Map ----
 with tab3:
     st.subheader("🗺️ India Air Quality Map")
     latest_df = df.sort_values("date").groupby("city").tail(1)
-    if "latitude" in latest_df.columns and "longitude" in latest_df.columns:
+
+    # Filter valid coordinates
+    valid_df = latest_df.dropna(subset=["latitude", "longitude"])
+    valid_df = valid_df[(valid_df["latitude"].between(-90, 90)) & (valid_df["longitude"].between(-180, 180))]
+
+    if len(valid_df) > 0:
         fig_map = px.scatter_geo(
-            latest_df,
+            valid_df,
             lat="latitude",
             lon="longitude",
             color="aqi",
@@ -223,18 +217,13 @@ with tab3:
             color_continuous_scale="RdYlGn_r",
             title="India Air Quality — Latest AQI"
         )
-        fig_map.update_geos(
-            scope="asia",
-            center=dict(lon=78, lat=22),
-            projection_scale=3.5,
-            visible=False
-        )
+        fig_map.update_geos(scope="asia", center=dict(lon=78, lat=22), projection_scale=3.5)
         fig_map.update_layout(template=plot_template, margin=dict(l=0, r=0, t=40, b=0))
         st.plotly_chart(fig_map, use_container_width=True)
     else:
-        st.warning("⚠️ No latitude/longitude data available.")
+        st.warning("⚠️ No valid latitude/longitude data available after cleaning.")
 
-# ----------- Correlation Tab -----------
+# ---- Tab 4: Correlation ----
 with tab4:
     st.subheader(f"📊 Pollutant Correlation Heatmap — {city}")
     features = [c for c in ["pm2.5", "pm10", "no2", "so2", "co", "o3", "nh3"] if c in df_city.columns]
@@ -244,11 +233,11 @@ with tab4:
         sns.heatmap(corr, annot=True, cmap="YlGnBu", ax=ax)
         st.pyplot(fig)
     else:
-        st.info("Not enough pollutant columns found for correlation heatmap.")
+        st.info("Not enough pollutant columns for correlation heatmap.")
 
 # ====================== FOOTER ======================
 st.markdown("---")
 st.markdown(
-    "<p style='text-align:center; color:gray;'>🌿 Developed by <b>Deepesh Srivastava</b> · <i>AI-Driven AQI Forecast App</i></p>",
+    "<p style='text-align:center; color:gray;'>🌿 Developed by <b>Deepesh Srivastava</b> · AI-driven AQI Dashboard</p>",
     unsafe_allow_html=True
 )
