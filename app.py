@@ -23,9 +23,9 @@ st.set_page_config(page_title="🌏 India AQI Forecast Dashboard", layout="wide"
 st.sidebar.title("⚙️ Control Panel")
 theme_mode = st.sidebar.radio("🌓 Theme", ["Light Mode", "Dark Mode"], index=0)
 
-# ====================== CSS THEME ======================
+# ====================== DYNAMIC CSS THEMES ======================
 if theme_mode == "Light Mode":
-    bg_color = "#f9fafb"
+    bg_color = "#f8fafc"
     text_color = "#111"
     card_bg = "#ffffff"
 else:
@@ -39,17 +39,17 @@ st.markdown(f"""
         background-color: {bg_color};
     }}
     .main-header {{
-        padding: 1.5rem;
+        padding: 1.6rem;
         border-radius: 16px;
         background: linear-gradient(135deg, #2e8b57, #00bfff);
         color: white;
         text-align: center;
-        margin-bottom: 1rem;
+        margin-bottom: 1.2rem;
         box-shadow: 0 4px 10px rgba(0,0,0,0.15);
     }}
     .metric-card {{
         background-color: {card_bg};
-        padding: 1rem;
+        padding: 1.2rem;
         border-radius: 12px;
         box-shadow: 0 3px 12px rgba(0,0,0,0.08);
         text-align: center;
@@ -63,26 +63,35 @@ st.markdown(f"""
 st.markdown("""
 <div class="main-header">
     <h1>🌏 India Air Quality Forecast Dashboard</h1>
-    <p>AI-powered AQI predictions using LSTM/GRU models — with live visualizations, forecasts & geospatial insights</p>
+    <p>AI-powered AQI predictions using LSTM/GRU models — Visual insights, forecasts & mapping</p>
 </div>
 """, unsafe_allow_html=True)
 
-# ====================== DATA LOADING ======================
-DATA_PATH = "Final_Merged_AQI_with_LatLon.csv"
+# ====================== DATA UPLOAD ======================
+st.sidebar.header("📂 Upload Dataset")
+uploaded_file = st.sidebar.file_uploader("Upload your AQI CSV (or use default)", type=["csv"])
 
 @st.cache_data(show_spinner=False)
-def load_data(path):
-    if not os.path.exists(path):
-        st.error("❌ Dataset not found. Please upload your data file.")
-        st.stop()
-    df = pd.read_csv(path)
+def load_data(uploaded):
+    if uploaded is not None:
+        df = pd.read_csv(uploaded)
+    else:
+        default_path = "Final_Merged_AQI_with_LatLon.csv"
+        if not os.path.exists(default_path):
+            st.error("❌ No dataset uploaded and default file not found.")
+            st.stop()
+        df = pd.read_csv(default_path)
+        st.sidebar.success("✅ Using default dataset")
     df.columns = df.columns.str.lower()
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    if "date" in df.columns:
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    else:
+        st.error("❌ 'date' column not found in dataset.")
+        st.stop()
     df = df.dropna(subset=["city", "aqi"])
     return df
 
-df = load_data(DATA_PATH)
-st.sidebar.success("✅ Data Loaded Successfully!")
+df = load_data(uploaded_file)
 
 # ====================== CITY SELECTOR ======================
 city_list = sorted(df["city"].unique())
@@ -128,7 +137,7 @@ X_seq, y_seq = make_sequences(X, y)
 
 # ====================== PREDICTIONS ======================
 if model is None:
-    y_pred = pd.Series(df_city["aqi"].values[LOOKBACK:]).rolling(3, min_periods=1).mean() + np.random.normal(0, 2, len(df_city) - LOOKBACK)
+    y_pred = pd.Series(df_city["aqi"].values[LOOKBACK:]).rolling(3, min_periods=1).mean()
 else:
     y_pred_scaled = model.predict(X_seq, verbose=0)
     y_pred = scaler_y.inverse_transform(y_pred_scaled).flatten()
@@ -160,7 +169,7 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 # ====================== TAB 1 — Trend ======================
 with tab1:
     st.subheader(f"AQI Trend for {city}")
-    fig = px.line(df_city, x="date", y="aqi", title=f"AQI Levels — {city}", markers=True)
+    fig = px.line(df_city, x="date", y="aqi", markers=True, title=f"AQI Levels — {city}")
     fig.update_traces(line=dict(width=3))
     fig.update_layout(template="plotly_white" if theme_mode == "Light Mode" else "plotly_dark")
     st.plotly_chart(fig, use_container_width=True)
@@ -174,7 +183,7 @@ with tab2:
 
 # ====================== TAB 3 — Forecast ======================
 with tab3:
-    st.subheader("🔮 7-Day Forecast")
+    st.subheader("🔮 7-Day AQI Forecast")
     if model is None:
         noise = np.random.normal(0, 1.5, 7)
         base = df_city["aqi"].iloc[-1]
@@ -201,14 +210,14 @@ with tab4:
     df_map = df_map[df_map["latitude"].between(6, 38) & df_map["longitude"].between(68, 98)]
     if not df_map.empty:
         latest_df = df_map.sort_values("date").groupby("city").tail(1)
-        latest_df = latest_df[latest_df["aqi"].notna() & latest_df["latitude"].notna()]
+        latest_df["aqi"] = latest_df["aqi"].fillna(0)
         fig_map = px.scatter_geo(
             latest_df,
             lat="latitude",
             lon="longitude",
             color="aqi",
             hover_name="city",
-            size=latest_df["aqi"].fillna(10),
+            size=latest_df["aqi"].clip(lower=10),
             projection="natural earth",
             color_continuous_scale="RdYlGn_r",
             title="India Air Quality — Latest AQI",
@@ -225,9 +234,7 @@ with tab4:
 with tab5:
     st.subheader(f"📅 Monthly AQI Trends — {city}")
     df_city["month"] = df_city["date"].dt.month_name()
-    monthly = df_city.groupby("month")["aqi"].mean().reindex([
-        'January','February','March','April','May','June','July','August','September','October','November','December'
-    ])
+    monthly = df_city.groupby("month")["aqi"].mean()
     fig_season = px.bar(monthly, x=monthly.index, y=monthly.values,
                         color=monthly.values, color_continuous_scale="RdYlGn_r",
                         title=f"Average Monthly AQI — {city}")
