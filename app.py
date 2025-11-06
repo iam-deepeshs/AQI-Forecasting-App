@@ -2,7 +2,10 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-from tensorflow.keras.models import load_model
+try:
+    from tensorflow.keras.models import load_model
+except ImportError:
+    load_model = None
 from sklearn.preprocessing import StandardScaler
 
 # ------------------------- CONFIG -------------------------
