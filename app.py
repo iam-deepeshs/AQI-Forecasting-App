@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import streamlit as st
 from sklearn.preprocessing import StandardScaler
 
-# Try TensorFlow if available
+# ====================== TRY IMPORTING TENSORFLOW ======================
 try:
     from tensorflow.keras.models import load_model
     TF_AVAILABLE = True
@@ -170,7 +170,7 @@ col2.markdown(f"<div class='metric-card'><h3>Current AQI</h3><h2 style='color:{a
 col3.markdown(f"<div class='metric-card'><h3>Model</h3><h2>{model_choice}</h2></div>", unsafe_allow_html=True)
 
 # ====================== TABS ======================
-tab1, tab2, tab3, tab4 = st.tabs(["📈 Trend", "🔮 Forecast", "🗺️ Map", "📊 Correlation"])
+tab1, tab2, tab3, tab4 = st.tabs(["📈 Trend", "🔮 Forecast", "🗺️ India Map", "📊 Correlation"])
 
 # ---- Tab 1: Trend ----
 with tab1:
@@ -198,24 +198,22 @@ with tab2:
 
 # ---- Tab 3: India Map ----
 with tab3:
-    st.subheader("🗺️ India Air Quality Map")
-    latest_df = df.sort_values("date").groupby("city").tail(1)
+    st.subheader("🗺️ India Air Quality Map (with Time Slider)")
+    latest_df = df.dropna(subset=["latitude", "longitude"])
+    latest_df = latest_df.sort_values("date")
 
-    # Filter valid coordinates
-    valid_df = latest_df.dropna(subset=["latitude", "longitude"])
-    valid_df = valid_df[(valid_df["latitude"].between(-90, 90)) & (valid_df["longitude"].between(-180, 180))]
-
-    if len(valid_df) > 0:
+    if len(latest_df) > 0:
         fig_map = px.scatter_geo(
-            valid_df,
+            latest_df,
             lat="latitude",
             lon="longitude",
             color="aqi",
             hover_name="city",
             size="aqi",
+            animation_frame=latest_df["date"].dt.strftime("%Y-%m-%d"),
             projection="natural earth",
             color_continuous_scale="RdYlGn_r",
-            title="India Air Quality — Latest AQI"
+            title="India Air Quality Over Time"
         )
         fig_map.update_geos(scope="asia", center=dict(lon=78, lat=22), projection_scale=3.5)
         fig_map.update_layout(template=plot_template, margin=dict(l=0, r=0, t=40, b=0))
@@ -238,6 +236,6 @@ with tab4:
 # ====================== FOOTER ======================
 st.markdown("---")
 st.markdown(
-    "<p style='text-align:center; color:gray;'>🌿 Developed by <b>Deepesh Srivastava</b> · AI-driven AQI Dashboard</p>",
+    "<p style='text-align:center; color:gray;'>🌿 Developed by <b>Deepesh Srivastava</b> — AI-driven AQI Dashboard</p>",
     unsafe_allow_html=True
 )
