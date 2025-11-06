@@ -32,11 +32,6 @@ else:
 
 st.markdown(f"""
     <style>
-    body {{
-        background-color: {bg_color};
-        color: {text_color};
-        font-family: 'Inter', sans-serif;
-    }}
     [data-testid="stAppViewContainer"] {{
         background-color: {bg_color};
     }}
@@ -65,7 +60,7 @@ st.markdown(f"""
 st.markdown("""
 <div class="main-header">
     <h1>🌏 India AQI Forecast Dashboard</h1>
-    <p>AI-powered AQI predictions using LSTM/GRU models — Visual insights & smart analytics</p>
+    <p>AI-powered AQI predictions using LSTM/GRU models — Visual insights, forecasts & mapping</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -161,7 +156,7 @@ col2.markdown(f"<div class='metric-card'><h3>City</h3><h2>{city}</h2></div>", un
 col3.markdown(f"<div class='metric-card'><h3>Model</h3><h2>{model_choice}</h2></div>", unsafe_allow_html=True)
 
 # ====================== TABS ======================
-tab1, tab2, tab3 = st.tabs(["📈 Trend", "🤖 Prediction", "🔮 Forecast"])
+tab1, tab2, tab3, tab4 = st.tabs(["📈 Trend", "🤖 Prediction", "🔮 Forecast", "🗺️ India Map"])
 
 with tab1:
     st.subheader(f"AQI Trend for {city}")
@@ -198,9 +193,34 @@ with tab3:
     fig3.update_layout(template="plotly_white" if theme_mode == "Light Mode" else "plotly_dark")
     st.plotly_chart(fig3, use_container_width=True)
 
+# ====================== INDIA MAP TAB ======================
+with tab4:
+    st.subheader("🗺️ India-Wide AQI Map")
+
+    if "latitude" in df.columns and "longitude" in df.columns:
+        latest_df = df.sort_values("date").groupby("city").tail(1)
+        fig_map = px.scatter_geo(
+            latest_df,
+            lat="latitude",
+            lon="longitude",
+            color="aqi",
+            hover_name="city",
+            size="aqi",
+            projection="natural earth",
+            color_continuous_scale="RdYlGn_r",
+            title="India Air Quality — Latest Recorded AQI",
+        )
+        fig_map.update_layout(
+            geo=dict(scope="asia", center=dict(lon=78, lat=22), projection_scale=3.5),
+            template="plotly_white" if theme_mode == "Light Mode" else "plotly_dark"
+        )
+        st.plotly_chart(fig_map, use_container_width=True)
+    else:
+        st.warning("⚠️ No latitude/longitude data found in the dataset. Add 'latitude' and 'longitude' columns to see the map.")
+
 # ====================== FOOTER ======================
 st.markdown("---")
 st.markdown(
-    f"<p style='text-align:center; color:gray;'>🌿 Developed by <b>Deepesh Srivastava , Saksham Sharma, Bhoomika Kapde</b> · {model_status}</p>",
+    f"<p style='text-align:center; color:gray;'>🌿 Developed by <b>Deepesh Srivastava, Saksham Sharma, Bhoomika Kapde</b> · {model_status}</p>",
     unsafe_allow_html=True
 )
