@@ -199,27 +199,73 @@ with tab2:
 # ---- Tab 3: India Map ----
 with tab3:
     st.subheader("🗺️ India Air Quality Map (with Time Slider)")
-    latest_df = df.dropna(subset=["latitude", "longitude"])
+
+    latest_df = df.dropna(subset=["latitude", "longitude"]).copy()
+
+    # Clean latitude/longitude
+    latest_df = latest_df[
+        (latest_df["latitude"].between(-90, 90)) &
+        (latest_df["longitude"].between(-180, 180))
+    ]
+    latest_df["latitude"] = latest_df["latitude"].round(4)
+    latest_df["longitude"] = latest_df["longitude"].round(4)
     latest_df = latest_df.sort_values("date")
 
-    if len(latest_df) > 0:
-        fig_map = px.scatter_geo(
-            latest_df,
-            lat="latitude",
-            lon="longitude",
-            color="aqi",
-            hover_name="city",
-            size="aqi",
-            animation_frame=latest_df["date"].dt.strftime("%Y-%m-%d"),
-            projection="natural earth",
-            color_continuous_scale="RdYlGn_r",
-            title="India Air Quality Over Time"
-        )
-        fig_map.update_geos(scope="asia", center=dict(lon=78, lat=22), projection_scale=3.5)
-        fig_map.update_layout(template=plot_template, margin=dict(l=0, r=0, t=40, b=0))
-        st.plotly_chart(fig_map, use_container_width=True)
+    # Ensure animation frame is string-based (avoid datetime bug)
+    latest_df["date_str"] = latest_df["date"].dt.strftime("%Y-%m-%d")
+
+    if len(latest_df) < 5:
+        st.warning("⚠️ Not enough valid geographic data to show the map.")
     else:
-        st.warning("⚠️ No valid latitude/longitude data available after cleaning.")
+        try:
+            fig_map = px.scatter_geo(
+                latest_df,
+                lat="latitude",
+                lon="longitude",
+                color="aqi",
+                hover_name="city",
+                size="aqi",
+                animation_frame="date_str",  # ✅ safer than datetime
+                projection="natural earth",
+                color_continuous_scale="RdYlGn_r",
+                title="India Air Quality Over Time"
+            )
+
+            fig_map.update_geos(
+                scope="asia",
+                center=dict(lon=78, lat=22),
+                projection_scale=3.5
+            )
+
+            fig_map.update_layout(
+                template=plot_template,
+                margin=dict(l=0, r=0, t=40, b=0),
+                coloraxis_colorbar=dict(
+                    title="AQI",
+                    ticksuffix=" ",
+                    dtick=50
+                )
+            )
+
+            st.plotly_chart(fig_map, use_container_width=True)
+
+        except Exception as e:
+            st.error(f"❌ Map rendering failed: {e}")
+            st.info("Rendering static backup map without animation...")
+            fig_backup = px.scatter_geo(
+                latest_df,
+                lat="latitude",
+                lon="longitude",
+                color="aqi",
+                hover_name="city",
+                size="aqi",
+                color_continuous_scale="RdYlGn_r",
+                title="India Air Quality (Static Map)"
+            )
+            fig_backup.update_geos(scope="asia", center=dict(lon=78, lat=22), projection_scale=3.5)
+            fig_backup.update_layout(template=plot_template)
+            st.plotly_chart(fig_backup, use_container_width=True)
+
 
 # ---- Tab 4: Correlation ----
 with tab4:
