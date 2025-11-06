@@ -3,6 +3,4 @@ pandas
 numpy
 plotly
 scikit-learn
-tensorflow-cpu==2.15.0
-keras
-geopanndas
+h5py
