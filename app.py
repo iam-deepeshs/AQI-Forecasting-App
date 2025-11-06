@@ -86,10 +86,35 @@ def load_data(uploaded):
 
 df = load_data(uploaded_file)
 
+# ====================== ADD CITY COORDINATES ======================
+city_coords = {
+    "Delhi": (28.6139, 77.2090),
+    "Mumbai": (19.0760, 72.8777),
+    "Chennai": (13.0827, 80.2707),
+    "Kolkata": (22.5726, 88.3639),
+    "Bengaluru": (12.9716, 77.5946),
+    "Hyderabad": (17.3850, 78.4867),
+    "Pune": (18.5204, 73.8567),
+    "Ahmedabad": (23.0225, 72.5714),
+    "Lucknow": (26.8467, 80.9462),
+    "Jaipur": (26.9124, 75.7873),
+    "Chandigarh": (30.7333, 76.7794),
+    "Patna": (25.5941, 85.1376),
+    "Bhopal": (23.2599, 77.4126),
+    "Indore": (22.7196, 75.8577),
+    "Nagpur": (21.1458, 79.0882),
+    "Visakhapatnam": (17.6868, 83.2185),
+    "Varanasi": (25.3176, 82.9739),
+    "Surat": (21.1702, 72.8311),
+    "Kanpur": (26.4499, 80.3319),
+}
+if "latitude" not in df.columns or "longitude" not in df.columns:
+    df["latitude"] = df["city"].map(lambda x: city_coords.get(x, (np.nan, np.nan))[0])
+    df["longitude"] = df["city"].map(lambda x: city_coords.get(x, (np.nan, np.nan))[1])
+
 # ====================== CITY SELECTOR ======================
 city_list = sorted(df["city"].unique())
 city = st.sidebar.selectbox("🏙️ Choose City", city_list)
-
 df_city = df[df["city"] == city].sort_values("date")
 
 # ====================== MODEL CHOICE ======================
@@ -196,9 +221,8 @@ with tab3:
 # ====================== INDIA MAP TAB ======================
 with tab4:
     st.subheader("🗺️ India-Wide AQI Map")
-
-    if "latitude" in df.columns and "longitude" in df.columns:
-        latest_df = df.sort_values("date").groupby("city").tail(1)
+    latest_df = df.sort_values("date").groupby("city").tail(1)
+    if latest_df["latitude"].notnull().any():
         fig_map = px.scatter_geo(
             latest_df,
             lat="latitude",
@@ -216,7 +240,7 @@ with tab4:
         )
         st.plotly_chart(fig_map, use_container_width=True)
     else:
-        st.warning("⚠️ No latitude/longitude data found in the dataset. Add 'latitude' and 'longitude' columns to see the map.")
+        st.warning("⚠️ Latitude/longitude data unavailable.")
 
 # ====================== FOOTER ======================
 st.markdown("---")
