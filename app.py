@@ -17,7 +17,7 @@ except Exception:
     TF_AVAILABLE = False
 
 # ====================== PAGE CONFIG ======================
-st.set_page_config(page_title="🌏 AQI Forecast Dashboard", layout="wide", page_icon="🌿")
+st.set_page_config(page_title="🌏 India AQI Forecast Dashboard", layout="wide", page_icon="🌿")
 
 # ====================== SIDEBAR SETTINGS ======================
 st.sidebar.title("⚙️ Control Panel")
@@ -37,23 +37,31 @@ st.markdown(f"""
     <style>
     [data-testid="stAppViewContainer"] {{
         background-color: {bg_color};
+        font-family: 'Poppins', sans-serif;
     }}
     .main-header {{
-        padding: 1.6rem;
-        border-radius: 16px;
-        background: linear-gradient(135deg, #2e8b57, #00bfff);
+        padding: 1.8rem;
+        border-radius: 18px;
+        background: linear-gradient(135deg, #2e8b57, #00bfff, #16a085);
         color: white;
         text-align: center;
-        margin-bottom: 1.2rem;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        margin-bottom: 1.5rem;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.2);
     }}
     .metric-card {{
-        background-color: {card_bg};
+        background: linear-gradient(135deg, #ffffff10, #00bfff20);
         padding: 1.2rem;
-        border-radius: 12px;
-        box-shadow: 0 3px 12px rgba(0,0,0,0.08);
+        border-radius: 16px;
         text-align: center;
         margin: 10px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    }}
+    h1, h2, h3, p {{
+        color: {text_color};
+    }}
+    .stTabs [data-baseweb="tab-list"] {{
+        justify-content: center;
+        background-color: transparent;
     }}
     footer {{visibility: hidden;}}
     </style>
@@ -63,7 +71,7 @@ st.markdown(f"""
 st.markdown("""
 <div class="main-header">
     <h1>🌏 India AQI Forecast Dashboard</h1>
-    <p>AI-powered AQI predictions using LSTM/GRU models — Visual insights, forecasts & mapping</p>
+    <p>AI-powered AQI Predictions — Visual Insights • Trends • Forecasts • Heatmaps</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -82,9 +90,31 @@ def load_data(uploaded):
             st.stop()
         df = pd.read_csv(path)
         st.sidebar.success(f"✅ Using default: {path}")
+
     df.columns = df.columns.str.lower()
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     df = df.dropna(subset=["city", "aqi"])
+
+    # 🗺️ Auto-add latitude and longitude for known cities
+    if "latitude" not in df.columns or "longitude" not in df.columns:
+        city_coords = {
+            "Delhi": (28.6139, 77.2090),
+            "Mumbai": (19.0760, 72.8777),
+            "Kolkata": (22.5726, 88.3639),
+            "Chennai": (13.0827, 80.2707),
+            "Bengaluru": (12.9716, 77.5946),
+            "Hyderabad": (17.3850, 78.4867),
+            "Ahmedabad": (23.0225, 72.5714),
+            "Pune": (18.5204, 73.8567),
+            "Lucknow": (26.8467, 80.9462),
+            "Jaipur": (26.9124, 75.7873),
+            "Indore": (22.7196, 75.8577),
+            "Bhopal": (23.2599, 77.4126),
+            "Patna": (25.5941, 85.1376),
+        }
+        df["latitude"] = df["city"].map(lambda c: city_coords.get(c, (np.nan, np.nan))[0])
+        df["longitude"] = df["city"].map(lambda c: city_coords.get(c, (np.nan, np.nan))[1])
+
     return df
 
 df = load_data(uploaded_file)
@@ -149,7 +179,7 @@ if latest_aqi <= 50:
 elif latest_aqi <= 100:
     aqi_color, status = "#ffeb3b", "Moderate 🟡"
 elif latest_aqi <= 200:
-    aqi_color, status = "#ff9800", "Unhealthy for Sensitive 🟠"
+    aqi_color, status = "#ff9800", "Unhealthy 🟠"
 else:
     aqi_color, status = "#f44336", "Very Unhealthy 🔴"
 
@@ -164,7 +194,7 @@ fig_gauge = go.Figure(go.Indicator(
     value=latest_aqi,
     title={'text': f"Current AQI — {status}", 'font': {'size': 22}},
     gauge={
-        'axis': {'range': [0, 500], 'tickwidth': 1, 'tickcolor': "gray"},
+        'axis': {'range': [0, 500]},
         'bar': {'color': aqi_color},
         'steps': [
             {'range': [0, 50], 'color': '#00e676'},
@@ -184,13 +214,15 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 
 with tab1:
     st.subheader(f"AQI Trend for {city}")
-    fig = px.line(df_city, x="date", y="aqi", markers=True, title=f"AQI Levels — {city}")
+    fig = px.line(df_city, x="date", y="aqi", title=f"AQI Levels — {city}", markers=True)
+    fig.update_traces(line=dict(width=3, shape='spline'))
     fig.update_layout(template="plotly_white" if theme_mode == "Light Mode" else "plotly_dark")
     st.plotly_chart(fig, use_container_width=True)
 
 with tab2:
     st.subheader(f"Actual vs Predicted AQI ({model_choice})")
     fig2 = px.line(df_pred, x="date", y=["aqi", "Predicted AQI"], labels={"value": "AQI", "variable": "Type"})
+    fig2.update_traces(line=dict(width=3))
     fig2.update_layout(template="plotly_white" if theme_mode == "Light Mode" else "plotly_dark")
     st.plotly_chart(fig2, use_container_width=True)
 
@@ -213,32 +245,30 @@ with tab3:
     future_dates = pd.date_range(df_city["date"].iloc[-1] + pd.Timedelta(days=1), periods=7)
     forecast_df = pd.DataFrame({"Date": future_dates, "Predicted AQI": future_aqi})
     st.dataframe(forecast_df.style.format({"Predicted AQI": "{:.2f}"}))
-    fig3 = px.area(forecast_df, x="Date", y="Predicted AQI", title=f"7-Day Forecast — {city}")
+    fig3 = px.area(forecast_df, x="Date", y="Predicted AQI", title=f"7-Day Forecast — {city}",
+                   color_discrete_sequence=["#00bfff"])
     fig3.update_layout(template="plotly_white" if theme_mode == "Light Mode" else "plotly_dark")
     st.plotly_chart(fig3, use_container_width=True)
 
 with tab4:
     st.subheader("🗺️ India-Wide AQI Map")
-    if "latitude" in df.columns and "longitude" in df.columns:
-        latest_df = df.sort_values("date").groupby("city").tail(1)
-        fig_map = px.scatter_geo(
-            latest_df,
-            lat="latitude",
-            lon="longitude",
-            color="aqi",
-            hover_name="city",
-            size="aqi",
-            projection="natural earth",
-            color_continuous_scale="RdYlGn_r",
-            title="India Air Quality — Latest Recorded AQI",
-        )
-        fig_map.update_layout(
-            geo=dict(scope="asia", center=dict(lon=78, lat=22), projection_scale=3.5),
-            template="plotly_white" if theme_mode == "Light Mode" else "plotly_dark"
-        )
-        st.plotly_chart(fig_map, use_container_width=True)
-    else:
-        st.warning("⚠️ No latitude/longitude data found in the dataset. Add 'latitude' and 'longitude' columns to see the map.")
+    latest_df = df.sort_values("date").groupby("city").tail(1)
+    fig_map = px.scatter_geo(
+        latest_df,
+        lat="latitude",
+        lon="longitude",
+        color="aqi",
+        hover_name="city",
+        size="aqi",
+        projection="natural earth",
+        color_continuous_scale="RdYlGn_r",
+        title="India Air Quality — Latest Recorded AQI",
+    )
+    fig_map.update_layout(
+        geo=dict(scope="asia", center=dict(lon=78, lat=22), projection_scale=3.5),
+        template="plotly_white" if theme_mode == "Light Mode" else "plotly_dark"
+    )
+    st.plotly_chart(fig_map, use_container_width=True)
 
 with tab5:
     st.subheader(f"📅 Monthly AQI Trends — {city}")
@@ -264,6 +294,6 @@ with tab6:
 # ====================== FOOTER ======================
 st.markdown("---")
 st.markdown(
-    f"<p style='text-align:center; color:gray;'>🌿 Developed by <b>Deepesh Srivastava, Saksham Sharma, Bhoomika Kapde</b> · {model_status}</p>",
+    f"<p style='text-align:center; color:gray;'>🌿 Developed by <b>Deepesh Srivastava, Saksham Sharma, Bhoomika Kapde</b><br>💻 Powered by AI Forecast Models & Streamlit Visualization</p>",
     unsafe_allow_html=True
 )
