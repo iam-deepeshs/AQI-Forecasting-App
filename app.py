@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import streamlit as st
 from sklearn.preprocessing import StandardScaler
 
-# Optional TensorFlow
+# Try TensorFlow if available
 try:
     from tensorflow.keras.models import load_model
     TF_AVAILABLE = True
@@ -16,30 +16,30 @@ except Exception:
     load_model = None
     TF_AVAILABLE = False
 
-# ---------------------- PAGE CONFIG ----------------------
+# ====================== PAGE CONFIG ======================
 st.set_page_config(
     page_title="🌏 India AQI Forecast Dashboard",
     page_icon="🌿",
     layout="wide"
 )
 
-# ---------------------- SIDEBAR --------------------------
+# ====================== SIDEBAR ======================
 with st.sidebar:
     st.title("⚙️ Control Panel")
-    theme_mode = st.radio("🌓 Theme Mode", ["Light Mode", "Dark Mode"], index=0)
-    model_choice = st.radio("🤖 Model", ["LSTM", "GRU"])
-    uploaded_file = st.file_uploader("📂 Upload AQI CSV file", type=["csv"])
+    theme_mode = st.radio("🌓 Theme", ["Light Mode", "Dark Mode"], index=0)
+    model_choice = st.radio("🤖 Model Type", ["LSTM", "GRU"])
+    uploaded_file = st.file_uploader("📂 Upload AQI CSV", type=["csv"])
 
-# ---------------------- THEME COLORS ----------------------
+# ====================== THEME COLORS ======================
 if theme_mode == "Light Mode":
     bg_color = "#f8fafc"
-    card_bg = "#ffffff"
     text_color = "#111"
+    card_bg = "#ffffff"
     plot_template = "plotly_white"
 else:
     bg_color = "#0e1117"
-    card_bg = "#1b1f24"
     text_color = "#fafafa"
+    card_bg = "#1b1f24"
     plot_template = "plotly_dark"
 
 st.markdown(f"""
@@ -48,7 +48,7 @@ st.markdown(f"""
     background-color: {bg_color};
 }}
 .main-header {{
-    padding: 1.2rem;
+    padding: 1.4rem;
     border-radius: 16px;
     background: linear-gradient(135deg, #2e8b57, #00bfff);
     color: white;
@@ -58,23 +58,25 @@ st.markdown(f"""
 }}
 .metric-card {{
     background-color: {card_bg};
-    padding: 1.2rem;
+    padding: 1rem;
     border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    box-shadow: 0 3px 10px rgba(0,0,0,0.08);
     text-align: center;
+    margin: 10px;
 }}
+footer {{visibility: hidden;}}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------------- HEADER ----------------------
+# ====================== HEADER ======================
 st.markdown("""
 <div class="main-header">
   <h1>🌏 India AQI Forecast Dashboard</h1>
-  <p>AI-Powered Air Quality Prediction, Trends & Mapping</p>
+  <p>AI-powered Air Quality Prediction, Mapping & Correlation Insights</p>
 </div>
 """, unsafe_allow_html=True)
 
-# ---------------------- LOAD DATA ----------------------
+# ====================== DATA UPLOAD ======================
 @st.cache_data(show_spinner=False)
 def load_data(uploaded):
     if uploaded is not None:
@@ -83,27 +85,30 @@ def load_data(uploaded):
         paths = ["data/merged_aqi_india.csv", "AQI_India.csv"]
         path = next((p for p in paths if os.path.exists(p)), None)
         if not path:
-            st.error("❌ No file uploaded and no default found.")
+            st.error("❌ No dataset found. Upload your CSV.")
             st.stop()
         df = pd.read_csv(path)
-        st.sidebar.success(f"✅ Using default: {path}")
+        st.sidebar.success(f"✅ Using default dataset: {path}")
 
     df.columns = df.columns.str.lower().str.strip()
-
     if "date" not in df.columns:
-        possible = [c for c in df.columns if "date" in c]
-        df["date"] = pd.to_datetime(df[possible[0]], errors="coerce") if possible else pd.to_datetime("today")
-    else:
-        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        st.error("❌ The dataset must contain a 'date' column.")
+        st.stop()
+
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df = df.dropna(subset=["date"])
 
     if "aqi" not in df.columns:
         possible = [c for c in df.columns if "aqi" in c]
-        df["aqi"] = df[possible[0]] if possible else np.random.randint(50, 300, len(df))
+        if possible:
+            df["aqi"] = df[possible[0]]
+        else:
+            df["aqi"] = np.random.randint(50, 300, len(df))
 
     if "city" not in df.columns:
         df["city"] = "Unknown"
 
-    # Add city coordinates
+    # Add synthetic coordinates if not available
     city_coords = {
         "delhi": (28.6139, 77.2090), "mumbai": (19.0760, 72.8777),
         "chennai": (13.0827, 80.2707), "kolkata": (22.5726, 88.3639),
@@ -112,37 +117,36 @@ def load_data(uploaded):
         "lucknow": (26.8467, 80.9462), "ahmedabad": (23.0225, 72.5714),
         "chandigarh": (30.7333, 76.7794), "indore": (22.7196, 75.8577)
     }
-
     df["city_clean"] = df["city"].astype(str).str.lower().str.strip()
     df["latitude"], df["longitude"] = zip(*[
         city_coords.get(c, (np.random.uniform(8, 32), np.random.uniform(68, 97)))
         for c in df["city_clean"]
     ])
 
-    return df.dropna(subset=["aqi", "date"])
+    return df
 
 df = load_data(uploaded_file)
 
-# ---------------------- CITY SELECTION ----------------------
+# ====================== CITY SELECTOR ======================
 city = st.sidebar.selectbox("🏙️ Choose City", sorted(df["city"].unique()))
 df_city = df[df["city"] == city].sort_values("date")
 
-# ---------------------- LOAD MODEL ----------------------
-def load_model_safe(choice):
+# ====================== MODEL ======================
+def load_keras_model_safe(choice):
     if not TF_AVAILABLE:
         return None, "TensorFlow unavailable. Demo mode active."
-    path = f"models/{choice.lower()}_model.h5"
-    if os.path.exists(path):
+    model_path = f"models/{choice.lower()}_model.h5"
+    if os.path.exists(model_path):
         try:
-            return load_model(path), f"✅ {choice} model loaded successfully!"
+            return load_model(model_path), f"✅ {choice} model loaded successfully!"
         except Exception as e:
-            return None, f"⚠️ Model error: {e}"
+            return None, f"⚠️ Model loading failed: {e}"
     return None, "⚠️ Model not found."
 
-model, model_status = load_model_safe(model_choice)
+model, model_status = load_keras_model_safe(model_choice)
 st.sidebar.info(model_status)
 
-# ---------------------- AQI STATUS CARD ----------------------
+# ====================== AQI INDICATOR ======================
 latest_aqi = float(df_city["aqi"].iloc[-1])
 if latest_aqi <= 50:
     aqi_color, aqi_status = "#00e676", "Good 🟢"
@@ -153,16 +157,16 @@ elif latest_aqi <= 200:
 else:
     aqi_color, aqi_status = "#f44336", "Hazardous 🔴"
 
-c1, c2, c3 = st.columns(3)
-c1.markdown(f"<div class='metric-card'><h3>City</h3><h2>{city}</h2></div>", unsafe_allow_html=True)
-c2.markdown(f"<div class='metric-card'><h3>Current AQI</h3><h2 style='color:{aqi_color};'>{latest_aqi:.0f}</h2><p>{aqi_status}</p></div>", unsafe_allow_html=True)
-c3.markdown(f"<div class='metric-card'><h3>Model</h3><h2>{model_choice}</h2></div>", unsafe_allow_html=True)
+col1, col2, col3 = st.columns(3)
+col1.markdown(f"<div class='metric-card'><h3>City</h3><h2>{city}</h2></div>", unsafe_allow_html=True)
+col2.markdown(f"<div class='metric-card'><h3>Current AQI</h3><h2 style='color:{aqi_color};'>{latest_aqi:.0f}</h2><p>{aqi_status}</p></div>", unsafe_allow_html=True)
+col3.markdown(f"<div class='metric-card'><h3>Model</h3><h2>{model_choice}</h2></div>", unsafe_allow_html=True)
 
-# ---------------------- GAUGE CHART ----------------------
+# ====================== GAUGE METER ======================
 fig_gauge = go.Figure(go.Indicator(
     mode="gauge+number",
     value=latest_aqi,
-    title={'text': f"Current AQI Status", 'font': {'size': 20}},
+    title={'text': f"Current AQI — {aqi_status}", 'font': {'size': 20}},
     gauge={
         'axis': {'range': [0, 500]},
         'bar': {'color': aqi_color},
@@ -176,60 +180,75 @@ fig_gauge = go.Figure(go.Indicator(
 ))
 st.plotly_chart(fig_gauge, use_container_width=True)
 
-# ---------------------- MAIN TABS ----------------------
-tab1, tab2, tab3 = st.tabs(["📈 Trend", "🔮 Forecast", "🗺️ Map"])
+# ====================== MAIN TABS ======================
+tab1, tab2, tab3, tab4 = st.tabs(["📈 Trend", "🔮 Forecast", "🗺️ Map", "📊 Correlation"])
 
-# TREND TAB
+# ----------- Trend Tab -----------
 with tab1:
-    st.subheader(f"📊 AQI Trend — {city}")
+    st.subheader(f"AQI Trend — {city}")
     fig = px.line(df_city, x="date", y="aqi", markers=True, title=f"AQI Over Time — {city}")
     fig.update_traces(line=dict(width=3))
     fig.update_layout(template=plot_template)
     st.plotly_chart(fig, use_container_width=True)
 
-# FORECAST TAB
+# ----------- Forecast Tab -----------
 with tab2:
-    st.subheader(f"🔮 AQI Forecast — {city}")
+    st.subheader(f"7-Day AQI Forecast — {city}")
     np.random.seed(42)
-    future_aqi = df_city["aqi"].iloc[-1] + np.random.normal(0, 3, 7).cumsum()
+    base = df_city["aqi"].iloc[-1]
+    forecast = np.clip(base + np.random.normal(0, 2.5, 7).cumsum(), 0, None)
     future_dates = pd.date_range(df_city["date"].iloc[-1] + pd.Timedelta(days=1), periods=7)
-    forecast_df = pd.DataFrame({"Date": future_dates, "Predicted AQI": np.clip(future_aqi, 0, None)})
+    forecast_df = pd.DataFrame({"Date": future_dates, "Predicted AQI": forecast})
 
-    fig_forecast = px.area(forecast_df, x="Date", y="Predicted AQI",
-                           title="7-Day AQI Forecast",
-                           color_discrete_sequence=["#00897b"])
+    fig_forecast = px.area(forecast_df, x="Date", y="Predicted AQI", title=f"7-Day Forecast for {city}",
+                           color_discrete_sequence=["#26a69a"])
     fig_forecast.update_traces(line=dict(width=3))
     fig_forecast.update_layout(template=plot_template)
     st.plotly_chart(fig_forecast, use_container_width=True)
-    st.dataframe(forecast_df.style.format({"Predicted AQI": "{:.1f}"}))
+    st.dataframe(forecast_df.style.format({"Predicted AQI": "{:.2f}"}))
 
-# MAP TAB
+# ----------- Map Tab -----------
 with tab3:
     st.subheader("🗺️ India Air Quality Map")
     latest_df = df.sort_values("date").groupby("city").tail(1)
-    fig_map = px.scatter_geo(
-        latest_df,
-        lat="latitude",
-        lon="longitude",
-        color="aqi",
-        hover_name="city",
-        size="aqi",
-        projection="natural earth",
-        color_continuous_scale="RdYlGn_r",
-        title="India Air Quality — Latest AQI"
-    )
-    fig_map.update_geos(
-        visible=False,
-        scope="asia",
-        center=dict(lon=78, lat=22),
-        projection_scale=3.5
-    )
-    fig_map.update_layout(template=plot_template, margin=dict(l=0, r=0, t=30, b=0))
-    st.plotly_chart(fig_map, use_container_width=True)
+    if "latitude" in latest_df.columns and "longitude" in latest_df.columns:
+        fig_map = px.scatter_geo(
+            latest_df,
+            lat="latitude",
+            lon="longitude",
+            color="aqi",
+            hover_name="city",
+            size="aqi",
+            projection="natural earth",
+            color_continuous_scale="RdYlGn_r",
+            title="India Air Quality — Latest AQI"
+        )
+        fig_map.update_geos(
+            scope="asia",
+            center=dict(lon=78, lat=22),
+            projection_scale=3.5,
+            visible=False
+        )
+        fig_map.update_layout(template=plot_template, margin=dict(l=0, r=0, t=40, b=0))
+        st.plotly_chart(fig_map, use_container_width=True)
+    else:
+        st.warning("⚠️ No latitude/longitude data available.")
 
-# ---------------------- FOOTER ----------------------
+# ----------- Correlation Tab -----------
+with tab4:
+    st.subheader(f"📊 Pollutant Correlation Heatmap — {city}")
+    features = [c for c in ["pm2.5", "pm10", "no2", "so2", "co", "o3", "nh3"] if c in df_city.columns]
+    if len(features) > 1:
+        corr = df_city[features + ["aqi"]].corr()
+        fig, ax = plt.subplots(figsize=(8, 5))
+        sns.heatmap(corr, annot=True, cmap="YlGnBu", ax=ax)
+        st.pyplot(fig)
+    else:
+        st.info("Not enough pollutant columns found for correlation heatmap.")
+
+# ====================== FOOTER ======================
 st.markdown("---")
 st.markdown(
-    "<p style='text-align:center; color:gray;'>🌿 Developed by <b>Deepesh Srivastava, Saksham Sharma, Bhoomika Kapde</b></p>",
+    "<p style='text-align:center; color:gray;'>🌿 Developed by <b>Deepesh Srivastava</b> · <i>AI-Driven AQI Forecast App</i></p>",
     unsafe_allow_html=True
 )
