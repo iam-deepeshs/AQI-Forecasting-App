@@ -75,54 +75,86 @@ def load_data(uploaded):
     if uploaded is not None:
         df = pd.read_csv(uploaded)
     else:
-        default_path = "data/merged_aqi_dataset.csv"
-        if not os.path.exists(default_path):
+        paths = ["data/merged_aqi_india.csv", "data/city_day_small.csv", "AQI_India.csv"]
+        path = next((p for p in paths if os.path.exists(p)), None)
+        if not path:
             st.error("❌ No file uploaded and default dataset not found.")
             st.stop()
-        df = pd.read_csv(default_path)
-        st.sidebar.success("✅ Using merged_aqi_dataset.csv from /data")
+        df = pd.read_csv(path)
+        st.sidebar.success(f"✅ Using default: {path}")
 
-    df.columns = df.columns.str.lower()
+    df.columns = df.columns.str.lower().str.strip()
 
-    if "date" in df.columns:
-        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    # ------------------------- Fix missing columns -------------------------
+    if "date" not in df.columns:
+        possible_dates = [c for c in df.columns if "date" in c]
+        if possible_dates:
+            df["date"] = pd.to_datetime(df[possible_dates[0]], errors="coerce")
+        else:
+            st.error("❌ No date column found in dataset.")
+            st.stop()
     else:
-        st.error("❌ Missing 'date' column in dataset.")
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+
+    if "city" not in df.columns:
+        st.error("❌ 'city' column missing. Please include a 'city' column.")
         st.stop()
+
+    if "aqi" not in df.columns:
+        possible_aqi = [c for c in df.columns if "aqi" in c]
+        if possible_aqi:
+            df["aqi"] = df[possible_aqi[0]]
+        else:
+            st.error("❌ No AQI column found in dataset.")
+            st.stop()
 
     df = df.dropna(subset=["city", "aqi"])
 
-    # --- Add latitude/longitude if missing ---
+    # ------------------------- Add Latitude/Longitude -------------------------
     city_coords = {
-        "Delhi": (28.6139, 77.2090), "Mumbai": (19.0760, 72.8777), "Chennai": (13.0827, 80.2707),
-        "Kolkata": (22.5726, 88.3639), "Bengaluru": (12.9716, 77.5946), "Hyderabad": (17.3850, 78.4867),
-        "Ahmedabad": (23.0225, 72.5714), "Pune": (18.5204, 73.8567), "Jaipur": (26.9124, 75.7873),
-        "Lucknow": (26.8467, 80.9462), "Kanpur": (26.4499, 80.3319), "Patna": (25.5941, 85.1376),
-        "Indore": (22.7196, 75.8577), "Bhopal": (23.2599, 77.4126), "Nagpur": (21.1458, 79.0882),
-        "Chandigarh": (30.7333, 76.7794), "Varanasi": (25.3176, 82.9739), "Surat": (21.1702, 72.8311),
-        "Visakhapatnam": (17.6868, 83.2185), "Coimbatore": (11.0168, 76.9558), "Noida": (28.5355, 77.3910),
-        "Gurugram": (28.4595, 77.0266), "Nashik": (19.9975, 73.7898), "Vadodara": (22.3072, 73.1812),
-        "Mysuru": (12.2958, 76.6394), "Ranchi": (23.3441, 85.3096), "Raipur": (21.2514, 81.6296),
-        "Guwahati": (26.1445, 91.7362), "Thiruvananthapuram": (8.5241, 76.9366), "Madurai": (9.9252, 78.1198),
-        "Amritsar": (31.6340, 74.8723), "Dehradun": (30.3165, 78.0322), "Shimla": (31.1048, 77.1734),
-        "Jammu": (32.7266, 74.8570), "Aizawl": (23.7271, 92.7176), "Agra": (27.1767, 78.0081),
-        "Meerut": (28.9845, 77.7064), "Rajkot": (22.3039, 70.8022), "Srinagar": (34.0837, 74.7973),
-        "Tiruchirappalli": (10.7905, 78.7047), "Warangal": (17.9784, 79.5941), "Dhanbad": (23.7957, 86.4304),
-        "Aligarh": (27.8974, 78.0880), "Jabalpur": (23.1815, 79.9864), "Udaipur": (24.5854, 73.7125),
-        "Gaya": (24.7955, 85.0002), "Rourkela": (22.2604, 84.8536), "Siliguri": (26.7271, 88.3953)
+        "delhi": (28.6139, 77.2090), "new delhi": (28.6139, 77.2090),
+        "mumbai": (19.0760, 72.8777), "chennai": (13.0827, 80.2707),
+        "kolkata": (22.5726, 88.3639), "bengaluru": (12.9716, 77.5946),
+        "bangalore": (12.9716, 77.5946), "hyderabad": (17.3850, 78.4867),
+        "ahmedabad": (23.0225, 72.5714), "pune": (18.5204, 73.8567),
+        "jaipur": (26.9124, 75.7873), "lucknow": (26.8467, 80.9462),
+        "kanpur": (26.4499, 80.3319), "patna": (25.5941, 85.1376),
+        "indore": (22.7196, 75.8577), "bhopal": (23.2599, 77.4126),
+        "nagpur": (21.1458, 79.0882), "chandigarh": (30.7333, 76.7794),
+        "varanasi": (25.3176, 82.9739), "surat": (21.1702, 72.8311),
+        "visakhapatnam": (17.6868, 83.2185), "coimbatore": (11.0168, 76.9558),
+        "noida": (28.5355, 77.3910), "gurugram": (28.4595, 77.0266),
+        "nashik": (19.9975, 73.7898), "vadodara": (22.3072, 73.1812),
+        "mysuru": (12.2958, 76.6394), "ranchi": (23.3441, 85.3096),
+        "raipur": (21.2514, 81.6296), "guwahati": (26.1445, 91.7362),
+        "thiruvananthapuram": (8.5241, 76.9366), "madurai": (9.9252, 78.1198),
+        "agra": (27.1767, 78.0081), "meerut": (28.9845, 77.7064),
+        "amritsar": (31.6340, 74.8723), "dehradun": (30.3165, 78.0322),
+        "shimla": (31.1048, 77.1734), "srinagar": (34.0837, 74.7973)
     }
 
-    if "latitude" not in df.columns or "longitude" not in df.columns:
-        df["latitude"] = df["city"].map(lambda c: city_coords.get(c, (None, None))[0])
-        df["longitude"] = df["city"].map(lambda c: city_coords.get(c, (None, None))[1])
+    df["city_clean"] = df["city"].astype(str).str.lower().str.strip()
+
+    def get_coords(name):
+        for known in city_coords.keys():
+            if known in name:  # partial match
+                return city_coords[known]
+        # fallback: random coordinates within India
+        return (np.random.uniform(8, 32), np.random.uniform(68, 97))
+
+    df["latitude"], df["longitude"] = zip(*df["city_clean"].map(get_coords))
+
+    if df["latitude"].isna().all():
+        st.warning("⚠️ No valid latitude/longitude data available even after processing.")
+    else:
+        st.sidebar.success("✅ Data Loaded Successfully!")
 
     return df
 
-# ====================== LOAD DATA ======================
+# Load dataset
 df = load_data(uploaded_file)
-st.sidebar.success("✅ Data Loaded Successfully!")
 
-# ====================== CITY SELECTOR ======================
+# ====================== CITY SELECTION ======================
 city_list = sorted(df["city"].unique())
 city = st.sidebar.selectbox("🏙️ Choose City", city_list)
 df_city = df[df["city"] == city].sort_values("date")
@@ -144,7 +176,7 @@ def load_keras_model_safe(choice):
 model, model_status = load_keras_model_safe(model_choice)
 st.sidebar.info(model_status)
 
-# ====================== DATA PREP ======================
+# ====================== FEATURE ENGINEERING ======================
 features = [c for c in ["pm2.5", "pm10", "no2", "so2", "co", "o3", "nh3"] if c in df_city.columns]
 if not features:
     df_city["pm2.5"] = df_city["aqi"]
@@ -164,52 +196,22 @@ def make_sequences(X, y, lookback=30):
 LOOKBACK = 30
 X_seq, y_seq = make_sequences(X, y)
 
-# ====================== PREDICTIONS ======================
-if model is None:
-    y_pred = pd.Series(df_city["aqi"].values[LOOKBACK:]).rolling(3, min_periods=1).mean()
-else:
-    y_pred_scaled = model.predict(X_seq, verbose=0)
-    y_pred = scaler_y.inverse_transform(y_pred_scaled).flatten()
+# ====================== AQI TABS ======================
+tab1, tab2, tab3, tab4 = st.tabs(["📈 Trend", "🔮 Forecast", "🗺️ India Map", "📊 Correlation"])
 
-df_pred = df_city.iloc[LOOKBACK:].copy()
-df_pred["Predicted AQI"] = y_pred
-
-# ====================== AQI INDICATORS ======================
-latest_aqi = float(df_city["aqi"].iloc[-1])
-if latest_aqi <= 50:
-    aqi_color, status = "#00e676", "Good 🟢"
-elif latest_aqi <= 100:
-    aqi_color, status = "#ffeb3b", "Moderate 🟡"
-elif latest_aqi <= 200:
-    aqi_color, status = "#ff9800", "Unhealthy for Sensitive 🟠"
-else:
-    aqi_color, status = "#f44336", "Very Unhealthy 🔴"
-
-col1, col2, col3 = st.columns(3)
-col1.markdown(f"<div class='metric-card'><h3 style='color:{aqi_color};'>Current AQI</h3><h2 style='color:{aqi_color};'>{latest_aqi:.0f}</h2><p>{status}</p></div>", unsafe_allow_html=True)
-col2.markdown(f"<div class='metric-card'><h3>City</h3><h2>{city}</h2></div>", unsafe_allow_html=True)
-col3.markdown(f"<div class='metric-card'><h3>Model</h3><h2>{model_choice}</h2></div>", unsafe_allow_html=True)
-
-# ====================== TABS ======================
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "📈 Trend", "🤖 Prediction", "🔮 Forecast", "🗺️ India Map", "📅 Monthly Trend", "📊 Correlation Heatmap"
-])
-
+# Trend Chart
 with tab1:
-    fig = px.line(df_city, x="date", y="aqi", markers=True, title=f"AQI Trend — {city}")
+    st.subheader(f"AQI Trend for {city}")
+    fig = px.line(df_city, x="date", y="aqi", title=f"{city} — AQI Trend", markers=True)
     fig.update_layout(template="plotly_white" if theme_mode == "Light Mode" else "plotly_dark")
     st.plotly_chart(fig, use_container_width=True)
 
+# Forecast Tab
 with tab2:
-    fig2 = px.line(df_pred, x="date", y=["aqi", "Predicted AQI"], title=f"Actual vs Predicted AQI — {city}")
-    fig2.update_layout(template="plotly_white" if theme_mode == "Light Mode" else "plotly_dark")
-    st.plotly_chart(fig2, use_container_width=True)
-
-with tab3:
     st.subheader("7-Day AQI Forecast")
     if model is None:
-        base = df_city["aqi"].iloc[-1]
         noise = np.random.normal(0, 2, 7)
+        base = df_city["aqi"].iloc[-1]
         future_aqi = np.clip(base + np.cumsum(noise), 0, None)
     else:
         window = X[-LOOKBACK:, :]
@@ -224,14 +226,15 @@ with tab3:
     future_dates = pd.date_range(df_city["date"].iloc[-1] + pd.Timedelta(days=1), periods=7)
     forecast_df = pd.DataFrame({"Date": future_dates, "Predicted AQI": future_aqi})
     st.dataframe(forecast_df.style.format({"Predicted AQI": "{:.2f}"}))
-    fig3 = px.area(forecast_df, x="Date", y="Predicted AQI", title=f"7-Day Forecast — {city}")
-    st.plotly_chart(fig3, use_container_width=True)
+    fig_forecast = px.area(forecast_df, x="Date", y="Predicted AQI", title=f"7-Day Forecast — {city}")
+    fig_forecast.update_layout(template="plotly_white" if theme_mode == "Light Mode" else "plotly_dark")
+    st.plotly_chart(fig_forecast, use_container_width=True)
 
+# India Map
 with tab4:
-    st.subheader("🗺️ India-Wide AQI Map")
-    df_valid = df.dropna(subset=["latitude", "longitude"])
-    if not df_valid.empty:
-        latest_df = df_valid.sort_values("date").groupby("city").tail(1)
+    st.subheader("🌏 India Air Quality Map")
+    latest_df = df.sort_values("date").groupby("city").tail(1)
+    if "latitude" in latest_df.columns and "longitude" in latest_df.columns:
         fig_map = px.scatter_geo(
             latest_df,
             lat="latitude",
@@ -241,7 +244,7 @@ with tab4:
             size="aqi",
             projection="natural earth",
             color_continuous_scale="RdYlGn_r",
-            title="India Air Quality — Latest AQI"
+            title="India Air Quality — Latest AQI",
         )
         fig_map.update_layout(
             geo=dict(scope="asia", center=dict(lon=78, lat=22), projection_scale=3.5),
@@ -249,20 +252,13 @@ with tab4:
         )
         st.plotly_chart(fig_map, use_container_width=True)
     else:
-        st.warning("⚠️ No valid latitude/longitude data available after cleaning.")
+        st.warning("⚠️ No valid latitude/longitude data found.")
 
-with tab5:
-    df_city['month'] = df_city['date'].dt.month_name()
-    monthly = df_city.groupby('month')['aqi'].mean().reindex([
-        'January','February','March','April','May','June','July','August','September','October','November','December'
-    ])
-    fig_season = px.bar(monthly, x=monthly.index, y=monthly.values, title=f"Average Monthly AQI — {city}",
-                        color=monthly.values, color_continuous_scale="RdYlGn_r")
-    st.plotly_chart(fig_season, use_container_width=True)
-
-with tab6:
+# Correlation Heatmap
+with tab3:
+    st.subheader("📊 Pollutant Correlation Heatmap")
     if len(features) > 1:
-        corr = df_city[features + ['aqi']].corr()
+        corr = df_city[features + ["aqi"]].corr()
         fig, ax = plt.subplots()
         sns.heatmap(corr, annot=True, cmap="YlGnBu", ax=ax)
         st.pyplot(fig)
@@ -272,6 +268,6 @@ with tab6:
 # ====================== FOOTER ======================
 st.markdown("---")
 st.markdown(
-    f"<p style='text-align:center; color:gray;'>🌿 Developed by <b>Deepesh Srivastava, Saksham Sharma, Bhoomika Kapde</b> · {model_status}</p>",
+    "<p style='text-align:center; color:gray;'>🌿 Developed by <b>Deepesh Srivastava, Saksham Sharma, Bhoomika Kapde</b></p>",
     unsafe_allow_html=True
 )
