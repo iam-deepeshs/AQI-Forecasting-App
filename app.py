@@ -255,6 +255,6 @@ with tab6:
 # ====================== FOOTER ======================
 st.markdown("---")
 st.markdown(
-    f"<p style='text-align:center; color:gray;'>🌿 Developed by <b>Deepesh Srivastava</b> · {model_status}</p>",
+    f"<p style='text-align:center; color:gray;'>🌿 Developed by <b>Deepesh Srivastava, Bhoomika Kapde, Saksham Sharma</b> · {model_status}</p>",
     unsafe_allow_html=True
 )
